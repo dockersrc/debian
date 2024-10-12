@@ -63,7 +63,7 @@ ENV TZ="${TIMEZONE}"
 ENV TIMEZONE="${TZ}"
 ENV LANG="${LANGUAGE}"
 ENV TERM="xterm-256color"
-ENV HOSTNAME="casjaysdevdocker-debian"
+ENV HOSTNAME="casjaysdev-debian"
 ENV DEBIAN_FRONTEND="${DEBIAN_FRONTEND}"
 
 USER ${USER}
