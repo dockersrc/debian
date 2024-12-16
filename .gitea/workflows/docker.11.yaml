@@ -1,4 +1,4 @@
-name: release-tag
+name: debian-11
 
 on: push
 

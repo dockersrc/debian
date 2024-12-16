@@ -1,4 +1,4 @@
-name: release-tag
+name: debian-10
 
 on: push
 
