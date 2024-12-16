@@ -55,7 +55,7 @@ ARG PHP_SERVER
 ARG SHELL_OPTS
 ARG DEBIAN_FRONTEND
 
-ARG PACK_LIST="bash-completion git curl wget sudo unzip tini xz-utils iproute2 pinentry-curses bsd-mailx procps net-tools bsd-mailx postfix python3-pip certbot ca-certificates jq "
+ARG PACK_LIST="bash-completion git curl wget sudo unzip tini xz-utils iproute2 pinentry-curses bsd-mailx procps net-tools bsd-mailx postfix python3-icu python3-pip certbot ca-certificates jq "
 
 ENV ENV=~/.profile
 ENV SHELL="/bin/sh"
