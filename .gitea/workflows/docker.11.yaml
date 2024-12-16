@@ -3,7 +3,7 @@ name: debian-11
 on: push
 
 jobs:
-  release-image:
+  debian-11:
     runs-on: act_runner
     container:
       image: catthehacker/ubuntu:act-latest
