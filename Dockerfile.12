@@ -75,7 +75,7 @@ RUN set -e; \
   echo "Setting up prerequisites"; \
   echo "$LANG UTF-8" >"/etc/locale.gen"; \
   echo 'export DEBIAN_FRONTEND="'${DEBIAN_FRONTEND}'"' >"/etc/profile.d/apt.sh" && chmod 755 "/etc/profile.d/apt.sh"; \
-  apt update && apt install -yy bash locales apt-utils; \
+  apt update && apt install -yy bash locales apt-utils python3-tz; \
   dpkg-reconfigure --frontend=noninteractive locales;update-locale LANG=$LANG; \
   update-alternatives --install /bin/sh sh /bin/bash 1 
 
