@@ -70,7 +70,108 @@ __clean_variables() {
   printf '%s' "$var" | grep -v '^$'
 }
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-__no_exit() { [ -f "/run/no_exit.pid" ] || exec bash -c "trap 'sleep 1;rm -Rf /run/*;/tmp/*;/data/logs/start.log;exit 0' TERM INT;(while true; do echo $$ >/run/no_exit.pid;tail -qf /data/logs/start.log 2>/dev/null||sleep 20; done) & wait"; }
+# Auto-detect services from init.d scripts
+__auto_detect_services() {
+  local discovered_services="tini"  # Always include tini as init
+  local init_dir="/usr/local/etc/docker/init.d"
+  
+  if [ -d "$init_dir" ]; then
+    for script in "$init_dir"/*.sh; do
+      if [ -f "$script" ]; then
+        # Extract service name from filename (remove number prefix and .sh suffix)
+        local service=$(basename "$script" | sed 's/^[0-9]*-//;s|\.sh$||g')
+        discovered_services="$discovered_services,$service"
+      fi
+    done
+  fi
+  
+  echo "$discovered_services"
+}
+
+# Enhanced __no_exit function with service monitoring and proper failure handling
+__no_exit() {
+  local monitor_services="${SERVICES_LIST:-$(__auto_detect_services)}"
+  local check_interval="${SERVICE_CHECK_INTERVAL:-30}"
+  local max_failures="${MAX_SERVICE_FAILURES:-3}"
+  declare -A failure_counts
+  
+  # Initialize failure counters
+  IFS=',' read -ra services <<< "$monitor_services"
+  for service in "${services[@]}"; do
+    service="${service// /}" # trim whitespace
+    [ -n "$service" ] && failure_counts["$service"]=0
+  done
+  
+  echo "🔍 Starting service supervisor - monitoring: $monitor_services"
+  echo "⏰ Check interval: ${check_interval}s, Max failures: $max_failures per service"
+  
+  # Set up trap to handle termination gracefully
+  trap 'echo "🛑 Container terminating - cleaning up services"; kill $(jobs -p) 2>/dev/null; rm -f /run/*.pid /run/init.d/*.pid; exit 0' TERM INT EXIT
+  
+  # Main supervision loop
+  while true; do
+    local failed_services=""
+    local running_services=""
+    local critical_failure=false
+    
+    # Check each monitored service
+    IFS=',' read -ra services <<< "$monitor_services"
+    for service in "${services[@]}"; do
+      service="${service// /}" # trim whitespace
+      [ -z "$service" ] && continue
+      
+      if __pgrep "$service" >/dev/null 2>&1; then
+        running_services="$running_services $service"
+        failure_counts["$service"]=0  # reset failure count on success
+      else
+        failed_services="$failed_services $service"
+        failure_counts["$service"]=$((${failure_counts["$service"]:-0} + 1))
+        
+        echo "⚠️  Service '$service' not running (failure ${failure_counts["$service"]}/$max_failures)"
+        
+        # Check if we've exceeded max failures for this service
+        if [ ${failure_counts["$service"]} -ge $max_failures ]; then
+          echo "💥 Service '$service' failed $max_failures times - this is critical!"
+          critical_failure=true
+        fi
+      fi
+    done
+    
+    # If we have critical failures, terminate the container
+    if [ "$critical_failure" = true ]; then
+      echo "🚨 Critical service failure detected:"
+      echo "   💀 Dead services: $failed_services"  
+      echo "   ✅ Running services: $running_services"
+      echo "   🔄 Container will terminate to allow restart by orchestrator"
+      
+      # Write final status to log
+      {
+        echo "$(date): CRITICAL FAILURE - Container terminating"
+        echo "Dead services: $failed_services"
+        echo "Running services: $running_services"
+      } >> "/data/logs/start.log"
+      
+      # Terminate the container (PID 1 is the init process)
+      kill -TERM 1
+      exit 1
+    fi
+    
+    # Log status periodically (every 10 cycles = ~5 minutes with 30s interval)
+    if [ $(($(date +%s) % 300)) -lt $check_interval ]; then
+      echo "📊 Service status - Running:$running_services Failed:$failed_services"
+      # Write to start.log for backward compatibility
+      echo "$(date): Services running:$running_services failed:$failed_services" >> "/data/logs/start.log"
+    fi
+    
+    sleep "$check_interval"
+  done &
+  
+  # Keep the original behavior for log tailing (for compatibility)
+  [ -f "/data/logs/start.log" ] && tail -f "/data/logs/start.log" >/dev/null 2>&1 &
+  
+  # Wait for background processes
+  wait
+}
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 __trim() {
   local var="${*//;/ }"
@@ -642,46 +743,130 @@ __exec_command() {
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # Setup the server init scripts
 __start_init_scripts() {
+  set -e
+  trap 'echo "❌ Fatal error in service startup - killing container"; rm -f /run/__start_init_scripts.pid; kill -TERM 1' ERR
+  
   [ "$1" = " " ] && shift 1
   [ "$DEBUGGER" = "on" ] && echo "Enabling debugging" && set -o pipefail -x$DEBUGGER_OPTIONS || set -o pipefail
-  local retPID=""
+  
   local basename=""
   local init_pids=""
   local retstatus="0"
   local initStatus="0"
+  local failed_services=""
+  local successful_services=""
   local init_dir="${1:-/usr/local/etc/docker/init.d}"
-  local init_count="$(ls -A "$init_dir"/* 2>/dev/null | grep -v '\.sample' | wc -l)"
-  touch /run/__start_init_scripts.pid
-  mkdir -p "/tmp" "/run" "/run/init.d" "/usr/local/etc/docker/exec"
-  chmod -R 777 "/tmp" "/run" "/run/init.d" "/usr/local/etc/docker/exec"
+  local init_count="$(find "$init_dir" -name "*.sh" 2>/dev/null | wc -l)"
+  
+  if [ -n "$SERVICE_DISABLED" ]; then
+    echo "$SERVICE_DISABLED is disabled"
+    unset SERVICE_DISABLED
+    return 0
+  fi
+  
+  echo "🚀 Starting container services initialization"
+  echo "📂 Init directory: $init_dir"
+  echo "📊 Services to start: $init_count"
+  
+  # Create a fresh PID file to track this startup session
+  echo $$ > /run/__start_init_scripts.pid
+  
+  mkdir -p "/tmp" "/run" "/run/init.d" "/usr/local/etc/docker/exec" "/data/logs/init"
+  chmod -R 777 "/tmp" "/run" "/run/init.d" "/usr/local/etc/docker/exec" "/data/logs/init"
+  
   if [ "$init_count" -eq 0 ] || [ ! -d "$init_dir" ]; then
-    mkdir -p "/data/logs/init"
-    while :; do echo "Running: $(date)" >"/data/logs/init/keep_alive" && sleep 3600; done &
+    echo "⚠️  No init scripts found in $init_dir"
+    # Still create a minimal keep-alive for containers without services
+    while true; do 
+      echo "$(date): No services - container keep-alive" >> "/data/logs/start.log"
+      sleep 3600
+    done &
   else
+    echo "📋 Found $init_count service scripts to execute"
+    
     if [ -d "$init_dir" ]; then
-      [ -f "$init_dir/service.sample" ] && __rm "$init_dir"/*.sample
-      chmod -Rf 755 "$init_dir"/*.sh
+      # Remove sample files  
+      find "$init_dir" -name "*.sample" -delete 2>/dev/null
+      
+      # Make scripts executable
+      find "$init_dir" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null
+      
+      # Execute scripts in numerical/alphabetical order
       for init in "$init_dir"/*.sh; do
         if [ -x "$init" ]; then
-          name="$(basename "$init")"
-          service="$(printf '%s' "$name" | sed 's/^[^-]*-//;s|.sh$||g')"
-          printf '# - - - executing file: %s\n' "$init"
-          eval "$init" && sleep 5 || sleep 3
-          retPID=$(__get_pid "$service")
-          if [ -n "$retPID" ]; then
-            initStatus="0"
-            printf '# - - - %s has been started - pid: %s\n' "$service" "${retPID:-error}"
+          basename="$(basename "$init")"
+          service="$(printf '%s' "$basename" | sed 's/^[0-9]*-//;s|\.sh$||g')"
+          
+          printf '\n🔧 Executing service script: %s (service: %s)\n' "$init" "$service"
+          
+          # Execute the init script and capture its exit code
+          if eval "$init"; then
+            sleep 5  # Give service more time to start properly
+            
+            # Verify the service actually started by checking for PID
+            retPID=$(__get_pid "$service")
+            if [ -n "$retPID" ]; then
+              initStatus="0"
+              successful_services="$successful_services $service"
+              printf '✅ Service %s started successfully - PID: %s\n' "$service" "$retPID"
+            else
+              # Service script succeeded but no PID found - this is suspicious
+              initStatus="1"
+              failed_services="$failed_services $service"
+              printf '⚠️  Service %s script completed but no PID found\n' "$service"
+            fi
           else
-            initStatus="1"
-            printf '# - - - %s has falied to start - check log %s\n' "$service" "docker log $CONTAINER_NAME"
+            # Service script failed
+            script_exit_code="$?"
+            initStatus="1" 
+            failed_services="$failed_services $service"
+            printf '❌ Init script %s failed with exit code %s\n' "$init" "$script_exit_code"
           fi
-          echo ""
+        else
+          printf '⚠️  Script %s is not executable, skipping\n' "$init"
         fi
+        
         retstatus=$(($retstatus + $initStatus))
+        printf '\n'
       done
+      
+      printf '📊 Service startup summary:\n'
+      printf '   ✅ Successful: %s\n' "${successful_services:-none}"
+      printf '   ❌ Failed: %s\n' "${failed_services:-none}"
+      printf '   📈 Total status code: %s\n' "$retstatus"
+      
+      # If any services failed to start, terminate the container immediately
+      if [ $retstatus -gt 0 ]; then
+        echo ""
+        echo "💥 Service startup failures detected!"
+        echo "🔄 Container will terminate to allow orchestrator restart"
+        echo "📝 Check container logs for detailed failure information"
+        
+        # Write failure information to log
+        {
+          echo "$(date): SERVICE STARTUP FAILURE"
+          echo "Successful services: $successful_services"
+          echo "Failed services: $failed_services" 
+          echo "Total errors: $retstatus"
+        } >> "/data/logs/start.log"
+        
+        # Clean up and exit
+        rm -f /run/__start_init_scripts.pid
+        exit $retstatus
+      fi
     fi
   fi
-  printf '%s\n' "$SERVICE_NAME started on $(date)" >"/data/logs/start.log"
+  
+  # Write successful startup status to log
+  {
+    echo "$(date): Container startup completed successfully"
+    echo "Active services: $successful_services"
+    [ -n "$failed_services" ] && echo "Failed services: $failed_services" 
+    echo "Status code: $retstatus"
+  } >> "/data/logs/start.log"
+  
+  printf '\n🎉 All services initialized successfully!\n'
+  printf '🔍 Service monitoring will now begin...\n\n'
   return $retstatus
 }
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1200,6 +1385,6 @@ export ENTRYPOINT_DATA_INIT_FILE DATA_DIR_INITIALIZED ENTRYPOINT_CONFIG_INIT_FIL
 export ENTRYPOINT_PID_FILE ENTRYPOINT_INIT_FILE ENTRYPOINT_FIRST_RUN
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # export the functions
-export -f __get_pid __start_init_scripts __is_running __certbot __update_ssl_certs __create_ssl_cert
+export -f __get_pid __start_init_scripts __is_running __certbot __update_ssl_certs __create_ssl_cert __no_exit __auto_detect_services
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # end of functions
