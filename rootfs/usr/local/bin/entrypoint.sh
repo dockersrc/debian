@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 # - - - - - - - - - - - - - - - - - - - - - - - - -
-##@Version           :  202510221728-git
+##@Version           :  202510221732-git
 # @@Author           :  Jason Hempstead
 # @@Contact          :  jason@casjaysdev.pro
 # @@License          :  WTFPL
 # @@ReadME           :  entrypoint.sh --help
 # @@Copyright        :  Copyright: (c) 2025 Jason Hempstead, Casjays Developments
-# @@Created          :  Wednesday, Oct 22, 2025 17:28 EDT
+# @@Created          :  Wednesday, Oct 22, 2025 17:32 EDT
 # @@File             :  entrypoint.sh
 # @@Description      :  Entrypoint file for debian
 # @@Changelog        :  New script
