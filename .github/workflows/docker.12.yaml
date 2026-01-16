@@ -31,6 +31,7 @@ jobs:
         run: |
           echo "BUILD_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
           echo "DATE_TAG=$(date +'%y%m')" >> $GITHUB_OUTPUT
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -83,3 +84,4 @@ jobs:
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
           tags: |
             ghcr.io/${{ github.repository }}:bookworm
+            ghcr.io/${{ github.repository }}:12

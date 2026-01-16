@@ -30,6 +30,7 @@ jobs:
         run: |
           echo "BUILD_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
           echo "DATE_TAG=$(date +'%y%m')" >> $GITHUB_OUTPUT
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to Docker Hub
         uses: docker/login-action@v2
@@ -82,3 +83,4 @@ jobs:
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
           tags: |
             docker.io/casjaysdev/debian:trixie
+            docker.io/casjaysdev/debian:13
