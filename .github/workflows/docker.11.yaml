@@ -31,7 +31,6 @@ jobs:
         run: |
           echo "BUILD_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
           echo "DATE_TAG=$(date +'%y%m')" >> $GITHUB_OUTPUT
-          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -58,7 +57,7 @@ jobs:
             BUILD_DATE=${{ steps.meta.outputs.BUILD_DATE }}
             BUILD_VERSION=${{ steps.meta.outputs.BUILD_DATE }}
             PULL_URL=debian
-            DISTRO_VERSION=${IMAGE_VERSION}
+            DISTRO_VERSION=bullseye
             CONTAINER_VERSION=11
             TIMEZONE=America/New_York
             LANGUAGE=en_US.UTF-8
@@ -84,4 +83,3 @@ jobs:
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
           tags: |
             ghcr.io/${{ github.repository }}:bullseye
-            ghcr.io/${{ github.repository }}:11
