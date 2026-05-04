@@ -55,7 +55,7 @@ ARG PHP_SERVER
 ARG SHELL_OPTS
 ARG DEBIAN_FRONTEND
 
-ARG PACK_LIST="bash-completion git curl wget sudo unzip tini xz-utils iproute2 pinentry-curses bsd-mailx procps net-tools bsd-mailx postfix python3-icu python3-pip certbot jq "
+ARG PACK_LIST="bash-completion git curl wget sudo unzip tini xz-utils iproute2 pinentry-curses bsd-mailx procps net-tools bsd-mailx postfix python3-icu python3-pip certbot ca-certificates jq "
 
 ENV ENV=~/.profile
 ENV SHELL="/bin/sh"
@@ -75,6 +75,11 @@ RUN set -e; \
   echo "Setting up prerequisites"; \
   echo "$LANG UTF-8" >"/etc/locale.gen"; \
   echo 'export DEBIAN_FRONTEND="'${DEBIAN_FRONTEND}'"' >"/etc/profile.d/apt.sh" && chmod 755 "/etc/profile.d/apt.sh"; \
+  rm -f /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+  printf '%s\n' \
+    "deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware" \
+    "deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware" \
+    "deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" > /etc/apt/sources.list; \
   apt update && apt install -yy bash locales apt-utils; \
   locale-gen $LANG && update-locale LANG=$LANG; \
   update-alternatives --install /bin/sh sh /bin/bash 1 
