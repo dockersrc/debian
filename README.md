@@ -21,7 +21,7 @@ dockermgr update os debian
 ```shell
 mkdir -p "/var/lib/srv/root/docker/casjaysdev/debian/latest"
 git clone "https://github.com/dockermgr/debian" "$HOME/.local/share/CasjaysDev/dockermgr/debian"
-cp -Rfva "$HOME/.local/share/CasjaysDev/dockermgr/debian/dockerfs/." "/var/lib/srv/root/docker/casjaysdev/debian/latest/"
+cp -Rfva "$HOME/.local/share/CasjaysDev/dockermgr/debian/rootfs/." "/var/lib/srv/root/docker/casjaysdev/debian/latest/"
 docker run -d \
 --restart always \
 --privileged \
