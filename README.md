@@ -19,17 +19,17 @@ dockermgr update os debian
 ## Install and run container
   
 ```shell
-mkdir -p "/var/lib/srv/root/docker/casjaysdev/debian/latest"
+mkdir -p "/srv/root/docker/casjaysdev/debian/latest"
 git clone "https://github.com/dockermgr/debian" "$HOME/.local/share/CasjaysDev/dockermgr/debian"
-cp -Rfva "$HOME/.local/share/CasjaysDev/dockermgr/debian/rootfs/." "/var/lib/srv/root/docker/casjaysdev/debian/latest/"
+cp -Rfva "$HOME/.local/share/CasjaysDev/dockermgr/debian/rootfs/." "/srv/root/docker/casjaysdev/debian/latest/"
 docker run -d \
 --restart always \
 --privileged \
 --name casjaysdev-debian-latest \
 --hostname debian \
 -e TZ=${TIMEZONE:-America/New_York} \
--v "/var/lib/srv/root/docker/casjaysdev/debian/latest/data:/data:z" \
--v "/var/lib/srv/root/docker/casjaysdev/debian/latest/config:/config:z" \
+-v "/srv/root/docker/casjaysdev/debian/latest/data:/data:z" \
+-v "/srv/root/docker/casjaysdev/debian/latest/config:/config:z" \
 casjaysdev/debian:latest
 ```
   
@@ -45,8 +45,8 @@ services:
       - TZ=America/New_York
       - HOSTNAME=debian
     volumes:
-      - "/var/lib/srv/root/docker/casjaysdev/debian/latest/data:/data:z"
-      - "/var/lib/srv/root/docker/casjaysdev/debian/latest/config:/config:z"
+      - "/srv/root/docker/casjaysdev/debian/latest/data:/data:z"
+      - "/srv/root/docker/casjaysdev/debian/latest/config:/config:z"
     restart: always
 ```
   
